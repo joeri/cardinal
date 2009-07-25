@@ -201,7 +201,6 @@ token basic_primary {
     | <variable> {*}                        #= variable
     | <ahash> {*}                           #= ahash
     | <regex> {*}                           #= regex
-    | <do_block> {*}                        #= do_block
     | <quote_string> {*}                    #= quote_string
     | <warray> {*}                          #= warray
     | <array> {*}                           #= array
