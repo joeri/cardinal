@@ -1,7 +1,14 @@
-puts "1..2"
+require 'Test'
+include Test
+plan 3
 
 a = [ 1, 2, 3 ]
 b = a.join("-")
-puts "ok 1" if b == "1-2-3"
+is b, "1-2-3", "ok 1"
 b = a.join
-puts "ok 2" if b == "123"
+is b, "123", "ok 2"
+
+$, = ','
+todo 1, "join should respect the special variable $,"
+b = a.join
+is b, "1,2,3", "ok 3"
