@@ -162,10 +162,10 @@ list_cmp_loop_end:
     goto match
 
 no_match:
-    $P0 = get_hll_global ['Bool'], 'False'
+    $P0 = get_hll_global 'false'
     .return($P0)
 match:
-    $P0 = get_hll_global ['Bool'], 'True'
+    $P0 = get_hll_global 'true'
     .return($P0)
 .end
 
@@ -284,6 +284,27 @@ Return a sorted copy of the list
     .return ($P0)
 .end
 
+.sub 'select' :method
+    .param pmc block :named('!BLOCK')
+    .local pmc uarray, val
+
+    uarray = new 'CardinalArray'
+    $P0 = iter self
+
+  loop:
+    unless $P0 goto done
+
+    $P1 = shift $P0
+    $P2 = block($P1)
+    unless $P2 goto loop
+
+    uarray.'push'($P1)
+    goto loop
+
+  done:
+    .return (uarray)
+.end
+
 .sub reject :method
     .param pmc block :named("!BLOCK")
     .local pmc uarray, val
@@ -343,10 +364,10 @@ Return true if self contains ELEMENT
     eq $P0, args, done_t
     goto iter_loop
    done_f:
-        $P0 = get_hll_global ['Bool'], 'False'
+        $P0 = get_hll_global 'false'
         .return($P0)
    done_t:
-        $P0 = get_hll_global ['Bool'], 'True'
+        $P0 = get_hll_global 'true'
         .return($P0)
 .end
 
@@ -396,6 +417,50 @@ Return index (or nil) of ELEMENT, starting from the end
     .return($I0)
 .end
 
+=item insert(INDEX, ELEMENT, ...)
+
+Insert ELEMENT(s) at INDEX
+
+=cut
+
+.sub 'insert' :method
+    .param int index
+    .param pmc args :slurpy
+    .local int len
+
+    len = elements self
+
+    if index >= 0 goto skip_negative
+    index = index + 1
+    index = index + len
+    if index < 0 goto throw_index_exception
+
+  skip_negative:
+    splice self, args, index, 0
+
+    .return(self)
+
+  throw_index_exception:
+    .return(self)
+.end
+
+=item replace(ARRAY)
+
+Replace current contents of array with ARRAY.
+
+=cut
+
+.sub 'replace' :method
+    .param pmc other_array
+    .local int len
+
+    len = elements self
+
+    splice self, other_array, 0, len
+
+    .return(self)
+.end
+
 =item
 Return true is C<self> is of size 0
 =cut
@@ -405,10 +470,10 @@ Return true is C<self> is of size 0
     if len == 0 goto empty
     goto not_empty
     empty:
-       $P0 = get_hll_global ['Bool'], 'True'
+       $P0 = get_hll_global 'true'
        .return ($P0)
     not_empty:
-        $P0 = get_hll_global ['Bool'], 'False'
+        $P0 = get_hll_global 'false'
         .return ($P0)
 .end
 
@@ -554,8 +619,7 @@ Treats the list as a stack, pushing ELEMENTS onto the end of the list.  Returns 
     inc i
     goto loop
   done:
-    len = elements self
-    .return (len)
+    .return (self)
 .end
 
 =item join(SEPARATOR)
@@ -566,13 +630,20 @@ Returns a string comprised of all of the list, separated by the string SEPARATOR
 
 .sub 'join' :method
     .param string sep :optional
+    .param int sep_given :opt_flag
     .local string res
     .local string tmp
     .local int len
     .local int i
-
+    
     res = ""
+    
+    if sep_given goto skip_setting_sep
 
+    $P0 = get_hll_global '$,'
+    sep = $P0
+    
+  skip_setting_sep: 
     len = elements self
     if len == 0 goto done
 
@@ -708,7 +779,7 @@ if passed, otherwise returns nil.
     .local pmc return
     .local pmc nil
 
-    nil = new 'NilClass'
+    nil = get_hll_global 'nil'
     return = nil
 
     len = elements self
@@ -745,7 +816,7 @@ if passed, otherwise returns nil.
 .sub delete_at :method
     .param pmc index
     .local pmc nil, result
-    nil = new 'NilClass'
+    nil = get_hll_global 'nil'
 
     result = nil
 
@@ -769,9 +840,9 @@ if passed, otherwise returns nil.
     if len == i goto done
 
     $P0 = self[i]
-    $I0 = block($P0)
+    $P1 = block($P0)
 
-    unless $I0 goto finish_loop
+    unless $P1 goto finish_loop
 
     delete self[i]
 
@@ -812,7 +883,7 @@ Checks to see if the specified index or indices have been assigned to.  Returns 
     goto loop
 
   done:
-    .tailcall 'prefix:?'(test)
+    .tailcall 'bool'(test)
 .end
 
 =item kv()
@@ -1092,6 +1163,11 @@ Creates a new Array containing the results and returns it.
     .return (result)
 .end
 
+.sub 'map' :method
+    .param pmc block :named( "!BLOCK" )
+    .tailcall self.'collect'( "!BLOCK" => block )
+.end
+
 .sub 'collect!' :method
     .param pmc block :named('!BLOCK')
     .local int i, len
@@ -1108,7 +1184,14 @@ Creates a new Array containing the results and returns it.
     goto loop
 
   done:
+    .return (self)
 .end
+
+.sub 'map!' :method
+    .param pmc block :named( "!BLOCK" )
+    .tailcall self.'collect!'( "!BLOCK" => block )
+.end
+
 
 =item flatten
 
@@ -1360,11 +1443,104 @@ Retrieve the number of elements in C<self>
     .tailcall '!do_slice_range'(self, range)
 .end
 
-.sub '[]=' :method
-    .param pmc k
+.sub '!extend_array'
+    .param pmc a
+    .param int from
+    .param int to
+    .local int c
+    .local pmc nil
+
+    nil = get_hll_global 'nil'
+    c = from
+  loop:
+    a[c] = nil
+    
+    inc c
+    if c < to goto loop
+.end
+
+.sub '[]=' :method :multi('CardinalArray', 'CardinalInteger', _)
+    .param int i
     .param pmc v
-    self[k] = v
-    .return()
+    .local int length
+    
+    length = elements self
+    if i <= length goto set_value
+    
+    $I0 = i + length
+    if $I0 < 0  goto throw_index_exception
+
+    '!extend_array'(self, length, i)
+
+  set_value:
+    self[i] = v
+    .return (v)
+
+  throw_index_exception: # TODO
+    .return(v)
+.end
+
+.sub '[]=' :method :multi('CardinalArray', 'CardinalInteger', 'CardinalInteger', _)
+    .param int i
+    .param int c
+    .param pmc v
+    .local int length
+    .local pmc nil
+
+    length = elements self
+
+    if i >= 0 goto skip_negative
+
+    $I0 = i + length
+    if $I0 < 0  goto throw_index_exception
+
+  skip_negative:
+    if i <= length goto skip_fill
+    
+    '!extend_array'(self, length, i)
+
+  skip_fill:
+    $I0 = isa v, 'CardinalArray'
+    if $I0 goto skip_make_array
+
+    $P0 = new 'CardinalArray'
+
+    $I0 = isa v, 'NilClass'
+    if $I0 goto do_splice
+
+    $P0.'push'(v)
+
+    goto do_splice
+
+  skip_make_array:
+    $P0 = v
+
+  do_splice:
+    splice self, $P0, i, c
+
+   .return (v)
+
+  throw_index_exception: # TODO
+    .return(v)
+.end
+
+.sub '[]=' :method :multi('CardinalArray', 'CardinalRange', _)
+    .param pmc r
+    .param pmc v
+    .local pmc beg
+    .local pmc end
+    .local pmc count
+
+    beg = r.'from'()
+    end = r.'to'()
+
+    $P0 = getattribute r, '$!to_exclusive'
+    if $P0 goto skip_exclusive_to
+    inc end
+
+  skip_exclusive_to:
+    count = end - beg
+    .tailcall self.'[]='(beg, count, v)
 .end
 
 =item zip
@@ -1483,6 +1659,50 @@ The zip operator.
     .return ( $P0 )
   incorrect_args:
 # TODO: pass warning
+.end
+
+.sub 'count' :method
+    .param pmc obj :optional
+    .param int obj_flag :opt_flag
+    .param pmc block :optional :named("!BLOCK")
+    .param int block_flag :opt_flag
+    .local pmc it
+    .local pmc val
+    .local int count
+
+    if obj_flag goto has_object
+    if block_flag goto has_block
+
+    count=elements self
+    .return(count)
+
+  has_block:
+    count = 0
+    it = iter self
+  iter_loop:
+    unless it goto block_done
+    val = shift it
+    $P0=block(val)
+    unless $P0 goto iter_loop
+    inc count
+    goto iter_loop
+  block_done:
+    .return(count)
+
+  has_object:
+    # TODO: raise warning if block given
+    count = 0
+    it = iter self
+  iter_loop2:
+    unless it goto block_done2
+    val = shift it
+    eq val, obj, iter_match
+    goto iter_loop2
+  iter_match:
+    inc count
+    goto iter_loop2
+  block_done2:
+    .return(count)
 .end
 
 .sub '_cmp' :vtable('cmp') :method
@@ -1616,48 +1836,62 @@ Operator form for either repetition (when argument is an Integer), or as a short
 .sub 'infix:&' :multi('CardinalArray','CardinalArray')
     .param pmc this
     .param pmc that
-    .local pmc array
+    .local pmc inter, it, incl, item
+    
+    inter = new 'CardinalArray'
+    
+    it = iter this
 
-    array = this + that
-    array.'uniq!'()
+  this_loop:
+    unless it goto this_end
+    
+    item = shift it
+    incl = that.'include?'(item)
+    unless incl goto this_loop
+    
+    inter.'push'(item)
+    goto this_loop
+ 
+  this_end:
+    it = iter that
 
-    .return (array)
+  that_loop:
+    unless it goto that_end
+
+    item = shift it
+    incl = this.'include?'(item)
+    unless incl goto that_loop
+
+    inter.'push'(item)
+    goto that_loop
+
+  that_end:
+    inter.'uniq!'()
+
+    .return (inter)
 .end
 
 .sub 'infix:-' :multi('CardinalArray','CardinalArray')
     .param pmc this
     .param pmc that
-    .local pmc array, hash, key, includes
+    .local pmc array, includes, elem
     .local int i, len
 
     array = new 'CardinalArray'
-    hash = new 'CardinalHash'
-    len = elements that
-    i = 0
 
-  hash_loop:
-    if i == len goto hash_done
-
-    key = that[i]
-    hash[key] = 1
-
-    i = i + 1
-    goto hash_loop
-
-  hash_done:
     len = elements this
     i = 0
 
   diff_loop:
     if i == len goto diff_done
         
-    key = this[i]
-    includes = hash.'includes?'(key)
+    elem = this[i]
+    includes = that.'include?'(elem)
     
     i = i + 1
-    unless includes goto diff_loop
+    if includes goto diff_loop
 
-    array.'push'(key)
+    array.'push'(elem)
 
     goto diff_loop
   
@@ -2030,7 +2264,7 @@ Returns the elements of LIST in the opposite order.
     .return(array)
 .end
 
-## TODO: join map reduce sort zip
+## TODO: join reduce sort zip
 
 =back
 

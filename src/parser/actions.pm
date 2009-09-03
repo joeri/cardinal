@@ -20,8 +20,19 @@ class cardinal::Grammar::Actions;
 method TOP($/) {
     my $past := $<comp_stmt>.ast();
     $past.blocktype('declaration');
-    $past.pirflags(':load');
+    $past.pirflags(':load :main');
     $past.hll('cardinal');
+
+    my $init := PAST::Block.new();
+    $init.push(
+        PAST::Op.new( :inline('$P0 = compreg "cardinal"',
+                              'unless null $P0 goto have_cardinal',
+                              'load_bytecode "cardinal.pbc"',
+                              'have_cardinal:') )
+    );
+    $init.hll('parrot');
+    $init.pirflags(":init :load");
+    $past.loadinit($init);
 
     our $?INIT;
         if defined( $?INIT ) {
@@ -149,14 +160,20 @@ method end($/) {
 }
 
 method indexed_assignment($/) {
-    my $key := $<key>.ast();
+    my $keys;
     my $rhs := $<rhs>.ast();
     my $primary := $<basic_primary>.ast();
+
+	 	$keys := $<keys>.ast();
 
     my $past := PAST::Op.new( :name('[]='), :pasttype('callmethod'), :node($/) );
 
     $past.push( $primary );
-    $past.push( $key );
+
+		while $keys[0] {
+			$past.push( $keys.shift() );
+		}
+
     $past.push( $rhs );
 
     make $past;
@@ -391,10 +408,6 @@ method else($/) {
     make $<comp_stmt>.ast();
 }
 
-method ensure($/) {
-    make $<comp_stmt>.ast();
-}
-
 method while_stmt($/) {
     my $cond := $<expr>.ast();
     my $body := $<comp_stmt>.ast();
@@ -406,7 +419,7 @@ method for_stmt($/) {
     my $list := $<expr>.ast();
     my $body := $<comp_stmt>.ast();
     my $var := $<variable>.ast();
-    $body.blocktype('declaration');
+    $body.blocktype('immediate');
     $var.scope('parameter');
     $var.isdecl(0);
     $body[0].push($var);
@@ -694,9 +707,9 @@ method scope_identifier($/) {
 method literal($/, $key) {
     my $past;
     if $key eq 'true' {
-        $past := PAST::Op.new(:inline("%t = get_hll_global ['Bool'], 'True'"), :returns('Bool'));
+        $past := PAST::Op.new(:inline("%t = get_hll_global 'true'"), :returns('Bool'));
     } elsif $key eq 'false' {
-        $past := PAST::Op.new(:inline("%t = get_hll_global ['Bool'], 'False'"), :returns('Bool'));
+        $past := PAST::Op.new(:inline("%t = get_hll_global 'false'"), :returns('Bool'));
     } elsif $key eq 'nil' {
         $past := PAST::Op.new(:inline("%t = get_hll_global 'nil'"), :returns('NilClass'));
     } elsif $key eq 'self' {
